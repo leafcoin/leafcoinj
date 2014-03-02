@@ -832,7 +832,7 @@ public class PeerGroup extends AbstractExecutionThreadService implements Transac
             // Now adjust the earliest key time backwards by 3 days to handle the case of clock drift. This can occur
             // both in block header timestamps and if the users clock was out of sync when the key was first created
             // (to within a small amount of tolerance).
-            earliestKeyTimeSecs -= 86400 * 3; //TODO DOGE is still young, we can make it higher later. Makes blockchain sync way faster for new users.
+            earliestKeyTimeSecs -= 86400 * 3; //TODO LEAF is still young, we can make it higher later. Makes blockchain sync way faster for new users.
 
             // Do this last so that bloomFilter is already set when it gets called.
             setFastCatchupTimeSecs(earliestKeyTimeSecs);

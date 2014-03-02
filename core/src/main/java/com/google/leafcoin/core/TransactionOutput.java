@@ -204,7 +204,7 @@ public class TransactionOutput extends ChildMessage implements Serializable {
         // clients wrongness in order to ensure we're considered standard. A better formula would either estimate the
         // size of data needed to satisfy all different script types, or just hard code 33 below.
 
-        // DOGE doesn't enforce these rules. Therefore we consider each output as valid.
+        // LEAF doesn't enforce these rules. Therefore we consider each output as valid.
         return BigInteger.ZERO;
         /**final BigInteger size = BigInteger.valueOf(this.bitcoinSerialize().length + 148);
         BigInteger[] nonDustAndRemainder = feePerKbRequired.multiply(size).divideAndRemainder(BigInteger.valueOf(1000));

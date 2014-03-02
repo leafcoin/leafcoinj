@@ -532,7 +532,7 @@ public class WalletTool {
     private static void send(PaymentSession session) {
         try {
             System.out.println("Payment Request");
-            System.out.println("Amount: " + session.getValue().doubleValue() / 100000 + "mDOGE");
+            System.out.println("Amount: " + session.getValue().doubleValue() / 100000 + "mLEAF");
             System.out.println("Date: " + session.getDate());
             System.out.println("Memo: " + session.getMemo());
             if (session.pkiVerificationData != null) {

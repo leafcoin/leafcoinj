@@ -636,8 +636,8 @@ public class Wallet implements Serializable, BlockChainListener, PeerFilterProvi
             BigInteger valueSentToMe = tx.getValueSentToMe(this);
             BigInteger valueSentFromMe = tx.getValueSentFromMe(this);
             if (log.isInfoEnabled()) {
-                log.info(String.format("Received a pending transaction %s that spends %s DOGE from our own wallet," +
-                        " and sends us %s DOGE", tx.getHashAsString(), Utils.bitcoinValueToFriendlyString(valueSentFromMe),
+                log.info(String.format("Received a pending transaction %s that spends %s LEAF from our own wallet," +
+                        " and sends us %s LEAF", tx.getHashAsString(), Utils.bitcoinValueToFriendlyString(valueSentFromMe),
                         Utils.bitcoinValueToFriendlyString(valueSentToMe)));
             }
             if (tx.getConfidence().getSource().equals(TransactionConfidence.Source.UNKNOWN)) {
@@ -827,7 +827,7 @@ public class Wallet implements Serializable, BlockChainListener, PeerFilterProvi
         BigInteger valueSentToMe = tx.getValueSentToMe(this);
         BigInteger valueDifference = valueSentToMe.subtract(valueSentFromMe);
 
-        log.info("Received tx{} for {} DOGE: {} [{}] in block {}", sideChain ? " on a side chain" : "",
+        log.info("Received tx{} for {} LEAF: {} [{}] in block {}", sideChain ? " on a side chain" : "",
                 bitcoinValueToFriendlyString(valueDifference), tx.getHashAsString(), relativityOffset,
                 block != null ? block.getHeader().getHash() : "(unit test)");
 
@@ -1866,17 +1866,17 @@ public class Wallet implements Serializable, BlockChainListener, PeerFilterProvi
 
             List<TransactionInput> originalInputs = new ArrayList<TransactionInput>(req.tx.getInputs());
 
-            // We need to know if we need to add an additional fee because one of our values are smaller than 1 DOGE
+            // We need to know if we need to add an additional fee because one of our values are smaller than 1 LEAF
             boolean needAtLeastReferenceFee = false;
             int txOutDustFeeCount = 0;
             if (req.ensureMinRequiredFee && !req.emptyWallet) { // min fee checking is handled later for emptyWallet
                 for (TransactionOutput output : req.tx.getOutputs())
-                    if (output.getValue().compareTo(Utils.COIN) < 0) { //TXOut lower than 1 DOGE have a 2 DOGE fee!
+                    if (output.getValue().compareTo(Utils.COIN) < 0) { //TXOut lower than 1 LEAF have a 2 LEAF fee!
                         //TODO Currently Leafcoin doesn't have this. We can put it back in later.
 //                        if (output.getValue().compareTo(output.getMinNonDustValue()) < 0)
 //                            throw new IllegalArgumentException("Tried to send dust with ensureMinRequiredFee set - no way to complete this");
                         needAtLeastReferenceFee = true;
-                        txOutDustFeeCount++; //DOGE: Each TXOut < 1 DOGE needs +1 DOGE fee!
+                        txOutDustFeeCount++; //LEAF: Each TXOut < 1 LEAF needs +1 LEAF fee!
                     }
             }
 
@@ -2362,7 +2362,7 @@ public class Wallet implements Serializable, BlockChainListener, PeerFilterProvi
         try {
             StringBuilder builder = new StringBuilder();
             BigInteger balance = getBalance(BalanceType.ESTIMATED);
-            builder.append(String.format("Wallet containing %s DOGE in:%n",
+            builder.append(String.format("Wallet containing %s LEAF in:%n",
                     bitcoinValueToPlainString(balance)));
             builder.append(String.format("  %d pending transactions%n", pending.size()));
             builder.append(String.format("  %d unspent transactions%n", unspent.size()));
@@ -3451,7 +3451,7 @@ public class Wallet implements Serializable, BlockChainListener, PeerFilterProvi
                 if (needAtLeastReferenceFee && fees.compareTo(Transaction.REFERENCE_DEFAULT_MIN_TX_FEE) < 0)
                     fees = Transaction.REFERENCE_DEFAULT_MIN_TX_FEE;
 
-                //DOGE: Add 1 DOGE fee per txOut < 1 DOGE
+                //LEAF: Add 1 LEAF fee per txOut < 1 LEAF
                 if (txOutDustFeeCount > 0)
                     fees = fees.add(Transaction.REFERENCE_DEFAULT_MIN_TX_FEE.multiply(BigInteger.valueOf(txOutDustFeeCount)));
 
@@ -3483,7 +3483,7 @@ public class Wallet implements Serializable, BlockChainListener, PeerFilterProvi
                 if (additionalValueSelected != null)
                     change = change.add(additionalValueSelected);
 
-                // If change is < 1 DOGE, we will need to have at least minfee to be accepted by the network
+                // If change is < 1 LEAF, we will need to have at least minfee to be accepted by the network
                 if (req.ensureMinRequiredFee && !change.equals(BigInteger.ZERO) && change.compareTo(Utils.COIN) < 0) {
                     // This solution may fit into category 2, but it may also be category 3, we'll check that later
                     eitherCategory2Or3 = true;
@@ -3505,12 +3505,12 @@ public class Wallet implements Serializable, BlockChainListener, PeerFilterProvi
                     // If the change output would result in this transaction being rejected as dust, just drop the change and make it a fee
                     if (req.ensureMinRequiredFee && BigInteger.valueOf(100000000).compareTo(change) > 0) {
                         // This solution definitely fits in category 3
-                        //Throw away change lower than 1 DOGE as this is cheaper than paying the 1 DOGE fee.
+                        //Throw away change lower than 1 LEAF as this is cheaper than paying the 1 LEAF fee.
                         isCategory3 = true;
                         //additionalValueForNextCategory = Transaction.REFERENCE_DEFAULT_MIN_TX_FEE.add(
                         //                                 Transaction.MIN_NONDUST_OUTPUT.add(BigInteger.ONE));
                         additionalValueForNextCategory = Transaction.REFERENCE_DEFAULT_MIN_TX_FEE.add(BigInteger.ONE);
-                                                         //DOGE: We don't have a min value, but we add more fees for tx < 1
+                                                         //LEAF: We don't have a min value, but we add more fees for tx < 1
                     } else {
                         size += changeOutput.bitcoinSerialize().length + VarInt.sizeOf(req.tx.getOutputs().size()) - VarInt.sizeOf(req.tx.getOutputs().size() - 1);
                         // This solution is either category 1 or 2
