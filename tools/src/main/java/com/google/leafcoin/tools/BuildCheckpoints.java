@@ -40,15 +40,15 @@ public class BuildCheckpoints {
         long now = new Date().getTime() / 1000;
         peerGroup.setFastCatchupTimeSecs(now);
 
-        final long oneMonthAgo = now - (86400 * 14); //TODO: Make it higher later on
+        final long oneMonthAgo = now - (86400 * 2); //TODO: Make it higher later on
 
         chain.addListener(new AbstractBlockChainListener() {
             @Override
             public void notifyNewBestBlock(StoredBlock block) throws VerificationException {
                 int height = block.getHeight();
                 if (height % params.getInterval() == 0 && block.getHeader().getTimeSeconds() <= oneMonthAgo) {
-                    System.out.println(String.format("Checkpointing block %s at height %d",
-                            block.getHeader().getHash(), block.getHeight()));
+                    System.out.println(String.format("Checkpointing block %s at height %d, diff %d",
+                            block.getHeader().getHash(), block.getHeight(),block.getHeader().getDifficultyTarget()));
                     checkpoints.put(height, block);
                 }
             }
