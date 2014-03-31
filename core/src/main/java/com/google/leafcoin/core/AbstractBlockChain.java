@@ -83,6 +83,10 @@ public abstract class AbstractBlockChain {
     private static final Logger log = LoggerFactory.getLogger(AbstractBlockChain.class);
     protected final ReentrantLock lock = Threading.lock("blockchain");
 
+    protected final int NDIFF_KGW_ENTRY_BLOCK = 18818;
+    protected final int NDIFF_DIGISHIELD_ENTRY_BLOCK = 99000;
+
+
     /** Keeps a map of block hashes to StoredBlocks. */
     private final BlockStore blockStore;
 
@@ -896,7 +900,7 @@ private void verifyDifficulty(BigInteger calcDiff, Block nextBlock)
                 receivedDifficulty.toString(16) + " vs " + calcDiff.toString(16));
 }
 
-private void checkDifficultyTransitions_V2(StoredBlock pindexLast, Block pblock)
+private void checkDifficultyTransitions_V2(StoredBlock pindexLast, Block pblock) throws VerificationException,BlockStoreException
 {
     final long				BlocksTargetSpacing			= 1* 60; // 1
 	int					TimeDaySeconds				= 60 * 60 * 24;
@@ -904,33 +908,95 @@ private void checkDifficultyTransitions_V2(StoredBlock pindexLast, Block pblock)
 	long				PastSecondsMax				= (long)(TimeDaySeconds* 0.14);
 	long					PastBlocksMin				= (int)(PastSecondsMin / BlocksTargetSpacing);
 	long					PastBlocksMax				= (int)(PastSecondsMax / BlocksTargetSpacing);
-	try{
-		KimotoGravityWell(pindexLast, pblock, BlocksTargetSpacing, PastBlocksMin, PastBlocksMax);
-	}catch(BlockStoreException e){
-		// swallow - TODO
-	}
+
+	KimotoGravityWell(pindexLast, pblock, BlocksTargetSpacing, PastBlocksMin, PastBlocksMax);
 }
 
 
-private void checkDifficultyTransitions(StoredBlock storedPrev, Block nextBlock) throws BlockStoreException, VerificationException {
 
-
-
-    int DiffMode = 1;
-    if (params.getId().equals(NetworkParameters.ID_TESTNET)) {
-        if (storedPrev.getHeight()+1 >= 100) { DiffMode = 2; }
-    }
-    else {
-        if (storedPrev.getHeight()+1 >= 18818) { DiffMode = 2; }
-    }
-
-    if		(DiffMode == 1) { checkDifficultyTransitions_V1(storedPrev, nextBlock); return;}
-    else if	(DiffMode == 2) { checkDifficultyTransitions_V2(storedPrev, nextBlock); return;}
-
-    checkDifficultyTransitions_V2(storedPrev, nextBlock);
-}
- 
     
+ private void checkDifficultyTransitions_V3(StoredBlock storedPrev, Block nextBlock) throws BlockStoreException, VerificationException {
+        checkState(lock.isHeldByCurrentThread());
+        Block prev = storedPrev.getHeader();
+
+
+        int retargetInterval = params.getNewInterval();
+        int retargetTimespan =  params.getNewTargetTimespan();
+
+        // Is this supposed to be a difficulty transition point?
+        if ((storedPrev.getHeight() + 1) % retargetInterval != 0) {
+
+            if (params.getId().equals(NetworkParameters.ID_TESTNET) && nextBlock.getTime().after(testnetDiffDate)) {
+                checkTestnetDifficulty(storedPrev, prev, nextBlock);
+                return;
+            }
+
+            // No ... so check the difficulty didn't actually change.
+            if (nextBlock.getDifficultyTarget() != prev.getDifficultyTarget())
+                throw new VerificationException("Unexpected change in difficulty at height " + storedPrev.getHeight() +
+                        ": " + Long.toHexString(nextBlock.getDifficultyTarget()) + " vs " +
+                        Long.toHexString(prev.getDifficultyTarget()));
+            return;
+        }
+
+        // We need to find a block far back in the chain. It's OK that this is expensive because it only occurs every
+        // two weeks after the initial block chain download.
+        long now = System.currentTimeMillis();
+        StoredBlock cursor = blockStore.get(prev.getHash());
+        int goBack = retargetInterval - 1;
+        if (cursor.getHeight()+1 != retargetInterval)
+            goBack = retargetInterval;
+
+        for (int i = 0; i < goBack; i++) {
+            if (cursor == null) {
+                // This should never happen. If it does, it means we are following an incorrect or busted chain.
+                throw new VerificationException(
+                        "Difficulty transition point but we did not find a way back to the genesis block.");
+            }
+            cursor = blockStore.get(cursor.getHeader().getPrevBlockHash());
+        }
+
+        //We used checkpoints...
+        if(cursor == null)
+        {
+            log.debug("Difficulty transition: Hit checkpoint!");
+            return;
+        }
+
+        long elapsed = System.currentTimeMillis() - now;
+        if (elapsed > 50)
+            log.info("Difficulty transition traversal took {}msec", elapsed);
+
+        Block blockIntervalAgo = cursor.getHeader();
+        int timespan = (int) (prev.getTimeSeconds() - blockIntervalAgo.getTimeSeconds());
+        final int targetTimespan = retargetTimespan;
+
+        timespan = retargetTimespan + (timespan - retargetTimespan)/8;
+        if (timespan < (retargetTimespan - (retargetTimespan/4)) ) timespan = (retargetTimespan - (retargetTimespan/4));
+        if (timespan > (retargetTimespan + (retargetTimespan/2)) ) timespan = (retargetTimespan + (retargetTimespan/2));
+
+        BigInteger newDifficulty = Utils.decodeCompactBits(prev.getDifficultyTarget());
+        newDifficulty = newDifficulty.multiply(BigInteger.valueOf(timespan));
+        newDifficulty = newDifficulty.divide(BigInteger.valueOf(targetTimespan));
+
+        if (newDifficulty.compareTo(params.getProofOfWorkLimit()) > 0) {
+            log.info("Difficulty hit proof of work limit: {}", newDifficulty.toString(16));
+            newDifficulty = params.getProofOfWorkLimit();
+        }
+
+        int accuracyBytes = (int) (nextBlock.getDifficultyTarget() >>> 24) - 3;
+        BigInteger receivedDifficulty = nextBlock.getDifficultyTargetAsInteger();
+
+        // The calculated difficulty is to a higher precision than received, so reduce here.
+        BigInteger mask = BigInteger.valueOf(0xFFFFFFL).shiftLeft(accuracyBytes * 8);
+        newDifficulty = newDifficulty.and(mask);
+
+        if (newDifficulty.compareTo(receivedDifficulty) != 0)
+            throw new VerificationException("Network provided difficulty bits do not match what was calculated: " +
+                    receivedDifficulty.toString(16) + " vs " + newDifficulty.toString(16));
+    }
+
+	
     
     /**
      * Throws an exception if the blocks difficulty is not correct.
@@ -1039,6 +1105,29 @@ private void checkDifficultyTransitions(StoredBlock storedPrev, Block nextBlock)
             throw new VerificationException("Network provided difficulty bits do not match what was calculated: " +
                     receivedDifficulty.toString(16) + " vs " + newDifficulty.toString(16));
     }
+
+
+    private void checkDifficultyTransitions(StoredBlock storedPrev, Block nextBlock) throws BlockStoreException, VerificationException {
+
+
+
+        int DiffMode = 1;
+        if (params.getId().equals(NetworkParameters.ID_TESTNET)) {
+            if (storedPrev.getHeight()+1 >= 50) { DiffMode = 2; }
+            if (storedPrev.getHeight()+1 >= 70) { DiffMode = 3; }
+        }
+        else {
+            if (storedPrev.getHeight()+1 >= NDIFF_KGW_ENTRY_BLOCK) { DiffMode = 2; }
+            if (storedPrev.getHeight()+1 >= NDIFF_DIGISHIELD_ENTRY_BLOCK) { DiffMode = 3; }
+        }
+
+        if		(DiffMode == 1) { checkDifficultyTransitions_V1(storedPrev, nextBlock); return;}
+        else if	(DiffMode == 2) { checkDifficultyTransitions_V2(storedPrev, nextBlock); return;}
+        else if	(DiffMode == 3) { checkDifficultyTransitions_V3(storedPrev, nextBlock); return;}
+
+        checkDifficultyTransitions_V2(storedPrev, nextBlock);
+    }
+
 
     private void checkTestnetDifficulty(StoredBlock storedPrev, Block prev, Block next) throws VerificationException, BlockStoreException {
         checkState(lock.isHeldByCurrentThread());
